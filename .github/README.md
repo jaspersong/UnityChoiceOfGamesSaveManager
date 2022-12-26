@@ -4,7 +4,7 @@
 
 This is a hobby Unity project that helps manage save files for [Choice of Games](https://store.steampowered.com/search/?publisher=Choice%20of%20Games) and [Hosted Games](https://store.steampowered.com/search/?publisher=Hosted%20Games) that are published on **Steam** platform (tested on Windows only).
 
-The project is created with *Unity 5.6.2f1*, so it can be modified on pretty much any Unity version. For convenience, a portable pre-built Windows executable of the application can be found at the [Releases](https://github.com/yasirkula/UnityChoiceOfGamesSaveManager/releases) page.
+The project is created with *Unity 5.6.2f1*, so it can be modified on pretty much any Unity version. For convenience, a portable pre-built Windows executable of the application can be found at the [Releases](https://github.com/yasirkula/UnityChoiceOfGamesSaveManager/releases) page. Additionally, there are included instructions on installing on a Steam Deck, which may be able to be mirrored to be run on MacOS or other Linux distrobutions.
 
 **[Support the Developer ☕](https://yasirkula.itch.io/unity3d)**
 
@@ -34,3 +34,14 @@ The project is created with *Unity 5.6.2f1*, so it can be modified on pretty muc
 - You can create different playthroughs for each game. Each playthrough will have its own save files. To create a new playthrough or switch between playthroughs, you can click the current game's title ("*- Evertree Inn (Default) -*" in the first screenshot) and choose the desired playthrough from the list
 
 ![Screenshot](Images/PlaythroughSelectionDialog.png)
+
+## Installing on Steam Deck
+
+1. Install Unity Hub through the Discover ![Screenshot](Images/SteamDeck_UnityInstall.png)
+1. Open a Konsole, and type `systemctl restart --user xdg-desktop-portal`
+1. Open Unity and log in with a Unity account.
+1. Navigate within the Unity Hub to **Install > Install Editor** and install the **2021.3.14f1** version ![Screenshot](Images/SteamDeck_UnityEditor.png)
+1. Click on the drop down beside Open, and open a project from disk, and select the repository project folder
+1. Open the newly created project
+1. Navigate to **File > Build and Run**
+
