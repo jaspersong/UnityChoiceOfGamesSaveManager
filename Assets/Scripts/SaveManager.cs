@@ -980,9 +980,9 @@ namespace CoGSaveManager
 		private IEnumerator CheckForUpdatesAsync()
 		{
 			UnityWebRequest webRequest = UnityWebRequest.Get( "https://api.github.com/repos/yasirkula/UnityChoiceOfGamesSaveManager/releases/latest" );
-			yield return webRequest.Send();
+			yield return webRequest.SendWebRequest();
 
-			if( webRequest.isError )
+			if(webRequest.result == UnityWebRequest.Result.ConnectionError)
 				Debug.LogWarning( webRequest.error );
 			else
 			{
@@ -1027,9 +1027,9 @@ namespace CoGSaveManager
 			}
 
 			UnityWebRequest remoteGameDataFetch = UnityWebRequest.Get( settings.RemoteGameDataURL );
-			yield return remoteGameDataFetch.Send();
+			yield return remoteGameDataFetch.SendWebRequest();
 
-			if( remoteGameDataFetch.isError )
+			if(remoteGameDataFetch.result == UnityWebRequest.Result.ConnectionError)
 				Debug.LogWarning( remoteGameDataFetch.error );
 			else
 			{
@@ -1109,7 +1109,7 @@ namespace CoGSaveManager
 		// Legacy save files won't be deleted after migration so that even if something unexpected happens during migration, users won't lose their original (legacy) save files
 		private IEnumerator MigrateSaveFilesToV1_2_0()
 		{
-			if( string.IsNullOrEmpty( OutputDirectory ) || !Directory.Exists( OutputDirectory ) )
+			if( string.IsNullOrEmpty( OutputDirectory ) )
 				yield break;
 
 			HashSet<string> legacySaveFiles = new HashSet<string>( Directory.GetDirectories( OutputDirectory ) );
