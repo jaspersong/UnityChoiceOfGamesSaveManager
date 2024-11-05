@@ -17,6 +17,13 @@ namespace CoGSaveManager
 	}
 
 	[Serializable]
+	public class GameAsarPath
+	{
+		public string SaveFileName;
+		public string AsarFilePath;
+	}
+
+	[Serializable]
 	public class RemoteData
 	{
 		public RemoteGameData[] RemoteGameData;
@@ -25,9 +32,9 @@ namespace CoGSaveManager
 	[Serializable]
 	public class RemoteGameData
 	{
-		public string GameID;
 		public string SaveFileName;
 		public string ReadableName;
+		public string GameID;
 	}
 
 	public class SaveManager : MonoBehaviour
@@ -41,8 +48,6 @@ namespace CoGSaveManager
 		public const string STARRED_SAVE_FILE = "Starred";
 
 		private const string SETTINGS_FILE = "Settings.json";
-
-		private const string GAME_TITLE_FORMAT = "- {0} ({1}) -";
 
 #pragma warning disable 0649
 		[SerializeField]
@@ -72,6 +77,9 @@ namespace CoGSaveManager
 
 		[SerializeField]
 		private SaveEditorWindow saveEditorWindow;
+
+		[SerializeField]
+		private ChoiceExplorerWindow choiceExplorerWindow;
 
 		[SerializeField]
 		private LoadConfirmationDialog loadConfirmationDialog;
@@ -211,7 +219,6 @@ namespace CoGSaveManager
 					m_steamSavesDirectory = PlayerPrefs.GetString( "SteamSavesPath", "" );
 					if( !string.IsNullOrEmpty( m_steamSavesDirectory ) && !Directory.Exists( m_steamSavesDirectory ) )
 						m_steamSavesDirectory = "";
-
 					if( string.IsNullOrEmpty( m_steamSavesDirectory ) )
 					{
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
@@ -220,18 +227,18 @@ namespace CoGSaveManager
 							string potentialDirectory = string.Format( @"{0}:\Program Files (x86)\Steam\userdata", (char) ( 'C' + i ) );
 							if( Directory.Exists( potentialDirectory ) )
 							{
-								m_steamSavesDirectory = potentialDirectory;
+								SteamSavesDirectory = potentialDirectory;
 								break;
 							}
 						}
 #elif UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
 						string potentialDirectory = Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.Personal ), "Library/Application Support/Steam/userdata" );
 						if( Directory.Exists( potentialDirectory ) )
-							m_steamSavesDirectory = potentialDirectory;
+							SteamSavesDirectory = potentialDirectory;
 #elif UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
 						string potentialDirectory = Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.Personal ), ".local/share/Steam/userdata" );
 						if( Directory.Exists( potentialDirectory ) )
-							m_steamSavesDirectory = potentialDirectory;
+							SteamSavesDirectory = potentialDirectory;
 #endif
 					}
 				}
@@ -245,6 +252,38 @@ namespace CoGSaveManager
 					m_steamSavesDirectory = value;
 
 					PlayerPrefs.SetString( "SteamSavesPath", value );
+					PlayerPrefs.Save();
+				}
+			}
+		}
+
+		private string m_steamGamesDirectory;
+		private string SteamGamesDirectory
+		{
+			get
+			{
+				if( m_steamGamesDirectory == null )
+				{
+					m_steamGamesDirectory = PlayerPrefs.GetString( "SteamGamesPath", "" );
+					if( !string.IsNullOrEmpty( m_steamGamesDirectory ) && !Directory.Exists( m_steamGamesDirectory ) )
+						m_steamGamesDirectory = "";
+					if( string.IsNullOrEmpty( m_steamGamesDirectory ) )
+					{
+						string potentialDirectory = Path.Combine( Path.GetDirectoryName( SteamSavesDirectory ), "steamapps/common" );
+						if( Directory.Exists( potentialDirectory ) )
+							SteamGamesDirectory = potentialDirectory;
+					}
+				}
+
+				return m_steamGamesDirectory;
+			}
+			set
+			{
+				if( m_steamGamesDirectory != value && !string.IsNullOrEmpty( value ) )
+				{
+					m_steamGamesDirectory = value;
+
+					PlayerPrefs.SetString( "SteamGamesPath", value );
 					PlayerPrefs.Save();
 				}
 			}
@@ -321,6 +360,7 @@ namespace CoGSaveManager
 		private readonly HashSet<string> automatedSaveDirectoryNames = new HashSet<string>();
 
 		private string[] invalidFilenameChars;
+		private static readonly char[] streamReaderBuffer = new char[100];
 
 		private DateTime manuallyLoadedGameDateTime;
 		public static DateTime CurrentlyActiveSaveDateTime;
@@ -328,6 +368,8 @@ namespace CoGSaveManager
 		private readonly HashSet<string> exploredGameSaveFilePaths = new HashSet<string>();
 
 		private static readonly Dictionary<string, List<RemoteGameData>> remoteGameDataLookup = new Dictionary<string, List<RemoteGameData>>( 128 );
+
+		private static bool verboseLogging;
 
 		private void Awake()
 		{
@@ -341,6 +383,9 @@ namespace CoGSaveManager
 			{
 				Debug.LogException( e );
 			}
+
+			verboseLogging = settings.VerboseLogging;
+			canvasScaler.GetComponent<Canvas>().pixelPerfect = settings.UIPixelPerfect;
 
 			// Update UI resolution if needed
 			if( !Mathf.Approximately( settings.UIResolution, canvasScaler.referenceResolution.y ) )
@@ -395,10 +440,7 @@ namespace CoGSaveManager
 			manualSaveNameInputField.text = ManualSaveName;
 			numberOfAutomatedSavesInputField.text = NumberOfAutomatedSaves.ToString();
 
-			char[] _invalidFilenameChars = Path.GetInvalidFileNameChars();
-			invalidFilenameChars = new string[_invalidFilenameChars.Length];
-			for( int i = 0; i < _invalidFilenameChars.Length; i++ )
-				invalidFilenameChars[i] = _invalidFilenameChars[i].ToString();
+			invalidFilenameChars = Array.ConvertAll( Path.GetInvalidFileNameChars(), ( ch ) => ch.ToString() );
 
 			manualSaveNameInputField.onEndEdit.AddListener( ( value ) =>
 			{
@@ -488,7 +530,7 @@ namespace CoGSaveManager
 					}
 
 					LoadSaveFiles();
-				}, null, FileBrowser.PickMode.Folders, initialPath: initialPath, title: "Select the target Choice of Games' save directory" );
+				}, null, FileBrowser.PickMode.Folders, initialPath: initialPath, title: "Select the target game's save directory" );
 			} );
 
 			pickOutputDirectoryButton.onClick.AddListener( () => FileBrowser.ShowSaveDialog( ( paths ) => OutputDirectory = paths[0], null, FileBrowser.PickMode.Folders, title: "Select the folder where the save files will be stored", initialPath: OutputDirectory, saveButtonText: "Select" ) );
@@ -566,18 +608,10 @@ namespace CoGSaveManager
 
 			try
 			{
-				bool exploredGameSaveFilePathsChanged = false;
-				CachedSaveFilePaths cachedSaveFilePaths = JsonUtility.FromJson<CachedSaveFilePaths>( PlayerPrefs.GetString( "CachedSaveFilePaths", "{}" ) );
-				if( cachedSaveFilePaths.paths != null )
-				{
-					exploredGameSaveFilePaths.UnionWith( cachedSaveFilePaths.paths );
-
-					// Remove cached save file paths that no longer exist
-					if( exploredGameSaveFilePaths.RemoveWhere( ( cachedSaveFilePath ) => !File.Exists( cachedSaveFilePath ) ) > 0 )
-						exploredGameSaveFilePathsChanged = true;
-				}
+				LoadCachedSaveFilePaths();
 
 				// Automatically fetch the list of Choice of Games from Steam saves folder at each launch
+				bool exploredGameSaveFilePathsChanged = false;
 				if( !string.IsNullOrEmpty( SteamSavesDirectory ) )
 				{
 					foreach( string potentialSaveFilePath in Directory.GetFiles( SteamSavesDirectory, "*PSstate", SearchOption.AllDirectories ) )
@@ -588,13 +622,7 @@ namespace CoGSaveManager
 				}
 
 				if( exploredGameSaveFilePathsChanged )
-				{
-					string[] _exploredGameSaveFilePaths = new string[exploredGameSaveFilePaths.Count];
-					exploredGameSaveFilePaths.CopyTo( _exploredGameSaveFilePaths );
-
-					PlayerPrefs.SetString( "CachedSaveFilePaths", JsonUtility.ToJson( new CachedSaveFilePaths() { paths = _exploredGameSaveFilePaths } ) );
-					PlayerPrefs.Save();
-				}
+					SaveCachedSaveFilePaths();
 			}
 			catch( Exception e )
 			{
@@ -612,6 +640,16 @@ namespace CoGSaveManager
 
 		private void Update()
 		{
+#if UNITY_EDITOR
+			// In Unity editor, stop play mode immediately if a script is compiling because otherwise it causes issues after compilation is finished (e.g. duplicate automated save issue)
+			if( UnityEditor.EditorApplication.isCompiling )
+			{
+				Debug.Log( "<b>Exiting play mode because a script is compiling!</b>" );
+				UnityEditor.EditorApplication.isPlaying = false;
+				return;
+			}
+#endif
+
 			if( Time.time > nextAutomatedSaveCheckTime )
 			{
 				nextAutomatedSaveCheckTime = Time.time + saveCheckInterval;
@@ -756,6 +794,9 @@ namespace CoGSaveManager
 			automatedSaves.Add( new SaveEntry( saveDirectory, CurrentlyActiveSaveDateTime ) );
 			automatedSaveDirectoryNames.Add( Path.GetFileName( saveDirectory ) );
 			automatedSavesScrollView.UpdateList();
+
+			if( settings.AutoShowChoiceExplorer )
+				ShowChoiceExplorerWindow( automatedSaves[automatedSaves.Count - 1] );
 		}
 
 		private void SaveInternal( string rootDirectory )
@@ -786,6 +827,10 @@ namespace CoGSaveManager
 			{
 				saveEditorWindow.Show( saveEntry, GetSaveFilePath( saveEntry.directory ) );
 			},
+			() => // onSeeChoices
+			{
+				ShowChoiceExplorerWindow( saveEntry );
+			},
 			() => // onDelete
 			{
 				Directory.Delete( saveEntry.directory, true );
@@ -813,6 +858,40 @@ namespace CoGSaveManager
 			} );
 		}
 
+		private void ShowChoiceExplorerWindow( SaveEntry saveEntry )
+		{
+			string saveFilePath = GetSaveFilePath( saveEntry.directory );
+			string gameAsarFilePath = null;
+			try
+			{
+				GameAsarPath lastGameAsarPath = JsonUtility.FromJson<GameAsarPath>( PlayerPrefs.GetString( "LastGameAsar", "{}" ) );
+				if( !string.IsNullOrEmpty( lastGameAsarPath.SaveFileName ) && lastGameAsarPath.SaveFileName == GetReadableSaveFileName( saveFilePath, false ) )
+					gameAsarFilePath = lastGameAsarPath.AsarFilePath;
+				if( string.IsNullOrEmpty( gameAsarFilePath ) || !File.Exists( gameAsarFilePath ) )
+					gameAsarFilePath = Path.Combine( SteamGamesDirectory, string.Format( "{0}/resources/app.asar", RemoveInvalidFilenameCharsFromString( GetReadableSaveFileName( GameSaveFilePath, true ) ) ) );
+			}
+			catch
+			{
+			}
+
+			if( !string.IsNullOrEmpty( gameAsarFilePath ) && File.Exists( gameAsarFilePath ) )
+				choiceExplorerWindow.Show( saveFilePath, gameAsarFilePath );
+			else
+			{
+				FileBrowser.SetFilters( false, ".asar" );
+				FileBrowser.ShowLoadDialog( ( paths ) =>
+				{
+					PlayerPrefs.SetString( "LastGameAsar", JsonUtility.ToJson( new GameAsarPath() { SaveFileName = GetReadableSaveFileName( saveFilePath, false ), AsarFilePath = paths[0] } ) );
+					PlayerPrefs.Save();
+
+					SteamGamesDirectory = new FileInfo( paths[0] ).Directory.Parent.Parent.FullName;
+
+					choiceExplorerWindow.Show( saveFilePath, paths[0] );
+				}, null, FileBrowser.PickMode.Files,
+				initialPath: SteamGamesDirectory, initialFilename: "app.asar", title: "Select 'steamapps/common/GAME/resources/app.asar'" );
+			}
+		}
+
 		private void RefreshManualSaveNamesDropdown()
 		{
 			List<Dropdown.OptionData> manualSaveNames = new List<Dropdown.OptionData>( manualSaves.Count );
@@ -825,6 +904,42 @@ namespace CoGSaveManager
 			}
 
 			manualSaveNamesDropdown.options = manualSaveNames;
+		}
+
+		private void LoadCachedSaveFilePaths()
+		{
+			try
+			{
+				CachedSaveFilePaths cachedSaveFilePaths = JsonUtility.FromJson<CachedSaveFilePaths>( PlayerPrefs.GetString( "CachedSaveFilePaths", "{}" ) );
+				if( cachedSaveFilePaths.paths != null )
+				{
+					exploredGameSaveFilePaths.UnionWith( cachedSaveFilePaths.paths );
+
+					// Remove cached save file paths that no longer exist
+					if( exploredGameSaveFilePaths.RemoveWhere( ( cachedSaveFilePath ) => !File.Exists( cachedSaveFilePath ) ) > 0 )
+						SaveCachedSaveFilePaths();
+				}
+			}
+			catch( Exception e )
+			{
+				Debug.LogException( e );
+			}
+		}
+
+		private void SaveCachedSaveFilePaths()
+		{
+			try
+			{
+				string[] _exploredGameSaveFilePaths = new string[exploredGameSaveFilePaths.Count];
+				exploredGameSaveFilePaths.CopyTo( _exploredGameSaveFilePaths );
+
+				PlayerPrefs.SetString( "CachedSaveFilePaths", JsonUtility.ToJson( new CachedSaveFilePaths() { paths = _exploredGameSaveFilePaths } ) );
+				PlayerPrefs.Save();
+			}
+			catch( Exception e )
+			{
+				Debug.LogException( e );
+			}
 		}
 
 		private string[] GetAllSaveFilePaths( string saveDirectory )
@@ -848,20 +963,7 @@ namespace CoGSaveManager
 					}
 
 					if( newSaveFilePathExplored )
-					{
-						try
-						{
-							string[] _exploredGameSaveFilePaths = new string[exploredGameSaveFilePaths.Count];
-							exploredGameSaveFilePaths.CopyTo( _exploredGameSaveFilePaths );
-
-							PlayerPrefs.SetString( "CachedSaveFilePaths", JsonUtility.ToJson( new CachedSaveFilePaths() { paths = _exploredGameSaveFilePaths } ) );
-							PlayerPrefs.Save();
-						}
-						catch( Exception e )
-						{
-							Debug.LogException( e );
-						}
-					}
+						SaveCachedSaveFilePaths();
 				}
 			}
 
@@ -958,8 +1060,9 @@ namespace CoGSaveManager
 
 		private static RemoteGameData GetRemoteGameData( FileInfo saveFile )
 		{
+			string gameID = saveFile.Directory.Parent.Name;
 			List<RemoteGameData> matchingGameData;
-			if( remoteGameDataLookup.TryGetValue( saveFile.Directory.Parent.Name, out matchingGameData ) )
+			if( remoteGameDataLookup.TryGetValue( gameID, out matchingGameData ) )
 			{
 				string saveFileName = saveFile.Name;
 				for( int i = 0; i < matchingGameData.Count; i++ )
@@ -969,12 +1072,56 @@ namespace CoGSaveManager
 				}
 			}
 
+			// Try fetching the game's name from the save file's contents ("choice_title")
+			try
+			{
+				using( StreamReader streamReader = saveFile.OpenText() )
+				{
+					int count = streamReader.ReadBlock( streamReaderBuffer, 0, 100 );
+					string saveContents = new string( streamReaderBuffer, 0, count );
+					int gameTitleIndex = saveContents.IndexOf( "\"choice_title\":\"" );
+					if( gameTitleIndex >= 0 )
+					{
+						gameTitleIndex += 16;
+						int gameTitleEndIndex = saveContents.IndexOf( '"', gameTitleIndex );
+						if( gameTitleEndIndex > gameTitleIndex )
+						{
+							RemoteGameData result = new RemoteGameData()
+							{
+								SaveFileName = GetReadableSaveFileName( saveFile.Name, false ),
+								ReadableName = saveContents.Substring( gameTitleIndex, gameTitleEndIndex - gameTitleIndex ),
+								GameID = gameID,
+							};
+#if UNITY_EDITOR
+							// Log missing games' data which would make it easier for me to update the remote data: https://gist.github.com/yasirkula/27302fcc36117b4741ea4817c1569434
+							Debug.LogWarning( JsonUtility.ToJson( result ) + "," );
+#endif
+
+							if( matchingGameData == null )
+								remoteGameDataLookup[gameID] = matchingGameData = new List<RemoteGameData>( 2 );
+
+							matchingGameData.Add( result );
+							return result;
+						}
+					}
+				}
+			}
+			catch( Exception e )
+			{
+				Debug.LogException( e );
+			}
+
 			return null;
 		}
 
 		private void RefreshGameTitle()
 		{
-			gameTitleText.text = string.IsNullOrEmpty( GameSaveFilePath ) ? "No Choice of Game selected" : string.Format( GAME_TITLE_FORMAT, GetReadableSaveFileName( GameSaveFilePath, true ), currentPlaythrough );
+			if( string.IsNullOrEmpty( GameSaveFilePath ) )
+				gameTitleText.text = "No game selected";
+			else if( currentPlaythrough == DEFAULT_PLAYTHROUGH_NAME )
+				gameTitleText.text = string.Format( "- {0} -", GetReadableSaveFileName( GameSaveFilePath, true ) );
+			else
+				gameTitleText.text = string.Format( "- {0} ({1}) -", GetReadableSaveFileName( GameSaveFilePath, true ), currentPlaythrough );
 		}
 
 		private IEnumerator CheckForUpdatesAsync()
@@ -1099,6 +1246,38 @@ namespace CoGSaveManager
 
 			return str;
 		}
+
+		#region Logging
+		public static void LogVerbose( string format, object arg0 )
+		{
+			if( verboseLogging )
+				LogVerbose( string.Format( format, arg0 ) );
+		}
+
+		public static void LogVerbose( string format, object arg0, object arg1 )
+		{
+			if( verboseLogging )
+				LogVerbose( string.Format( format, arg0, arg1 ) );
+		}
+
+		public static void LogVerbose( string format, object arg0, object arg1, object arg2 )
+		{
+			if( verboseLogging )
+				LogVerbose( string.Format( format, arg0, arg1, arg2 ) );
+		}
+
+		public static void LogVerbose( string format, params object[] args )
+		{
+			if( verboseLogging )
+				LogVerbose( string.Format( format, args ) );
+		}
+
+		public static void LogVerbose( string message )
+		{
+			if( verboseLogging )
+				Debug.Log( message );
+		}
+		#endregion
 
 		// In v1.2.0, save files have changes as follows compared to v1.0.0:
 		// - Save files are grouped under Steam User IDs so that each Steam user's save files will be stored in a separate directory
